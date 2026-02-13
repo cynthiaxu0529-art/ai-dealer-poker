@@ -1,0 +1,19 @@
+{
+  "$schema": "https://railway.app/schema.json",
+  "name": "ai-dealer-poker",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "start": {
+    "cmd": "node src/server.js",
+    "env": {
+      "NODE_ENV": "production"
+    }
+  },
+  "env": {
+    "$schema": "https://railway.app/schema.json"
+  },
+  "deploy": {
+    "region": "us-west2"
+  }
+}
