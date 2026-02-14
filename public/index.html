@@ -350,23 +350,46 @@
       font-weight: bold;
     }
 
-    /* AI 解说 */
+    /* AI 荷官解说 */
     .ai-commentary {
-      background: rgba(155, 89, 182, 0.2);
+      background: linear-gradient(135deg, rgba(155, 89, 182, 0.3), rgba(142, 68, 173, 0.2));
       border: 2px solid #9b59b6;
       border-radius: 15px;
       padding: 20px;
       margin: 20px 0;
+      position: relative;
+      overflow: hidden;
     }
-
-    .ai-commentary h3 {
-      color: #9b59b6;
-      margin-bottom: 10px;
+    
+    .ai-commentary::before {
+      content: '🤖';
+      position: absolute;
+      top: -10px;
+      left: 20px;
+      background: #9b59b6;
+      padding: 5px 15px;
+      border-radius: 20px;
+      font-size: 0.9em;
     }
-
+    
     .ai-commentary p {
       line-height: 1.8;
       color: #ddd;
+      font-style: italic;
+    }
+    
+    .ai-typing {
+      display: inline-block;
+    }
+    
+    .ai-typing::after {
+      content: '|';
+      animation: blink 1s infinite;
+    }
+    
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
     }
 
     /* Toast 提示 */
@@ -424,11 +447,11 @@
       h1 {
         font-size: 1.8em;
       }
-      
+
       .card {
         padding: 20px;
       }
-      
+
       .players-grid {
         grid-template-columns: 1fr;
       }
@@ -510,7 +533,7 @@
       <!-- 操作面板 -->
       <div class="action-panel">
         <h3>🎯 牌局操作</h3>
-        
+
         <div class="action-buttons">
           <button class="action-btn buyin" onclick="showBuyinModal()">
             💰 买入筹码
@@ -534,7 +557,7 @@
     <div id="settlementPage" class="page">
       <div class="settlement">
         <h2>🏁 牌局结束</h2>
-        
+
         <div class="card">
           <table class="settlement-table">
             <thead>
@@ -589,45 +612,42 @@
     // 初始化 Socket 连接
     function initSocket() {
       socket = io(window.location.origin);
-      
+
       socket.on('connect', () => {
         console.log('🔗 已连接到服务器');
       });
-      
+
       socket.on('error', (data) => {
         showToast(data.message, 'error');
       });
-      
+
       socket.on('playerJoined', (data) => {
         players = data.players;
         renderPlayers();
         renderTransactions();
-        updateAICommentary(`${data.player.nickname} 加入房间，当前 ${players.length} 人`);
+        updateAICommentary('join', { player: data.player.nickname });
       });
-      
+
       socket.on('buyin', (data) => {
         const idx = players.findIndex(p => p.id === data.playerId);
         if (idx !== -1) {
           players[idx] = data.player;
           renderPlayers();
           renderTransactions();
-          updateAICommentary(`${data.player.nickname} 买入 ${data.amount}`);
+          updateAICommentary('buyin', { player: data.player.nickname, amount: data.amount });
         }
       });
-      
+
       socket.on('recordResult', (data) => {
         const idx = players.findIndex(p => p.id === data.playerId);
         if (idx !== -1) {
           players[idx] = data.player;
           renderPlayers();
           renderTransactions();
-          
-          const icon = data.type === 'win' ? '🎉' : '😢';
-          const text = data.type === 'win' ? `赢得` : `输掉`;
-          updateAICommentary(`${icon} ${data.player.nickname} ${text} ${data.amount}`);
+          updateAICommentary(data.type, { player: data.player.nickname, amount: data.amount });
         }
       });
-      
+
       socket.on('roomEnded', (data) => {
         currentRoom = data.room;
         showSettlement(data.summary);
@@ -638,29 +658,29 @@
     async function createRoom() {
       const roomName = document.getElementById('roomName').value || `德州扑克夜 ${new Date().toLocaleDateString()}`;
       const nickname = document.getElementById('creatorNickname').value || `小龙虾 #${Math.floor(Math.random() * 10000)}`;
-      
+
       try {
         const res = await fetch('/api/rooms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: roomName, creatorNickname: nickname })
         });
-        
+
         const data = await res.json();
-        
+
         if (data.success) {
           // 加入房间
           socket.emit('joinRoom', {
             roomId: data.roomId,
             nickname
           });
-          
+
           currentRoom = data.room;
           currentPlayer = {
             id: data.room.players[0].id,
             nickname
           };
-          
+
           showPage('roomPage');
           renderRoomInfo();
           showToast('房间创建成功！');
@@ -674,26 +694,26 @@
     async function joinRoom() {
       const roomId = document.getElementById('joinRoomId').value.toUpperCase();
       const nickname = document.getElementById('joinerNickname').value || `大鲨鱼 #${Math.floor(Math.random() * 10000)}`;
-      
+
       if (roomId.length !== 6) {
         showToast('请输入 6 位房间号', 'error');
         return;
       }
-      
+
       try {
         const res = await fetch(`/api/rooms/${roomId}`);
-        
+
         if (!res.ok) {
           showToast('房间不存在', 'error');
           return;
         }
-        
+
         // 加入房间
         socket.emit('joinRoom', { roomId, nickname });
-        
+
         currentRoom = await res.json();
         currentPlayer = { nickname };
-        
+
         showPage('roomPage');
         renderRoomInfo();
         showToast('加入成功！');
@@ -712,7 +732,7 @@
     function renderPlayers() {
       const grid = document.getElementById('playersGrid');
       document.getElementById('playerCount').textContent = players.length;
-      
+
       grid.innerHTML = players.map((p, idx) => `
         <div class="player-card ${p.id === currentPlayer?.id ? 'is-you' : ''}">
           <div class="player-header">
@@ -738,15 +758,15 @@
     // 渲染交易记录
     async function renderTransactions() {
       if (!currentPlayer) return;
-      
+
       const txs = await getTransactions(currentRoom.id, currentPlayer.id);
       const list = document.getElementById('transactionList');
-      
+
       if (txs.length === 0) {
         list.innerHTML = '<p style="color: #666; text-align: center;">暂无交易记录</p>';
         return;
       }
-      
+
       list.innerHTML = txs.slice(-10).reverse().map(tx => `
         <div class="transaction-item ${tx.type}">
           <span>${tx.note}</span>
@@ -780,24 +800,24 @@
           <input type="text" id="buyinNote" placeholder="例如：再加 50">
         </div>
       `;
-      
+
       document.getElementById('modalConfirm').onclick = async () => {
         const amount = parseInt(document.getElementById('buyinAmount').value);
         if (!amount || amount <= 0) {
           showToast('请输入有效金额', 'error');
           return;
         }
-        
+
         socket.emit('buyin', {
           roomId: currentRoom.id,
           playerId: currentPlayer.id,
           amount,
           note: document.getElementById('buyinNote').value
         });
-        
+
         closeModal();
       };
-      
+
       modal.style.display = 'flex';
     }
 
@@ -805,12 +825,12 @@
     function showRecordModal() {
       const modal = document.getElementById('modal');
       document.getElementById('modalTitle').textContent = '📝 记录输赢';
-      
+
       // 构建玩家选择
-      const playerOptions = players.map(p => 
+      const playerOptions = players.map(p =>
         `<option value="${p.id}">${p.nickname}</option>`
       ).join('');
-      
+
       document.getElementById('modalContent').innerHTML = `
         <div class="input-group">
           <label>选择玩家</label>
@@ -832,17 +852,17 @@
           <input type="text" id="recordNote" placeholder="例如：AA 撞 AA，输 100">
         </div>
       `;
-      
+
       document.getElementById('modalConfirm').onclick = () => {
         const playerId = document.getElementById('recordPlayer').value;
         const type = document.getElementById('recordType').value;
         const amount = parseInt(document.getElementById('recordAmount').value);
-        
+
         if (!amount || amount <= 0) {
           showToast('请输入有效金额', 'error');
           return;
         }
-        
+
         socket.emit('recordResult', {
           roomId: currentRoom.id,
           playerId,
@@ -850,10 +870,10 @@
           amount,
           note: document.getElementById('recordNote').value
         });
-        
+
         closeModal();
       };
-      
+
       modal.style.display = 'flex';
     }
 
@@ -861,40 +881,40 @@
     function showEndModal() {
       const modal = document.getElementById('modal');
       document.getElementById('modalTitle').textContent = '🏁 结束牌局';
-      
+
       const playerInputs = players.map(p => `
         <div class="input-group">
           <label>${p.nickname} 剩余筹码</label>
           <input type="number" class="final-chip-input" data-player="${p.id}" placeholder="${p.buyin}" min="0">
         </div>
       `).join('');
-      
+
       document.getElementById('modalContent').innerHTML = `
         <p style="margin-bottom: 15px; color: #aaa;">请输入每位玩家剩余的筹码数量：</p>
         ${playerInputs}
       `;
-      
+
       document.getElementById('modalConfirm').onclick = () => {
         const finalChips = players.map(p => ({
           playerId: p.id,
           amount: parseInt(document.querySelector(`[data-player="${p.id}"]`).value) || 0
         }));
-        
+
         socket.emit('finalizeRoom', {
           roomId: currentRoom.id,
           finalChips
         });
-        
+
         closeModal();
       };
-      
+
       modal.style.display = 'flex';
     }
 
     // 显示结算
     function showSettlement(summary) {
       showPage('settlementPage');
-      
+
       const tbody = document.getElementById('settlementBody');
       tbody.innerHTML = summary.map(s => `
         <tr>
@@ -906,23 +926,23 @@
           </td>
         </tr>
       `).join('');
-      
+
       // AI 总结
       const winners = summary.filter(s => s.profit > 0).sort((a, b) => b.profit - a.profit);
       const losers = summary.filter(s => s.profit < 0).sort((a, b) => a.profit - b.profit);
-      
+
       let summaryText = `本晚共 ${summary.length} 位玩家参与，进行了 ${currentRoom.rounds?.length || 0} 局。`;
-      
+
       if (winners.length > 0) {
         summaryText += ` 最大赢家是 ${winners[0].nickname}，盈利 +${winners[0].profit}！`;
       }
-      
+
       if (losers.length > 0) {
         summaryText += ` ${losers[0].nickname} 成为今晚最大输家，亏损 ${losers[0].profit}。`;
       }
-      
+
       summaryText += ' 牌局结束，大家下次再战！';
-      
+
       document.getElementById('summaryText').textContent = summaryText;
     }
 
@@ -938,18 +958,83 @@
         const profit = (p.finalChips || 0) - (p.buyin || 0);
         return `${p.nickname}: 买入 ${p.buyin || 0}，剩余 ${p.finalChips || 0}，${profit >= 0 ? '+' : ''}${profit}`;
       }).join('\n');
-      
+
       const text = `🎰 德州扑克战绩\n${currentRoom.name}\n\n${summary}`;
-      
+
       navigator.clipboard.writeText(text);
       showToast('战绩已复制！');
     }
 
-    // 更新 AI 解说
-    function updateAICommentary(text) {
+    // AI 荷官解说模板
+    const dealerCommentary = {
+      // 玩家加入
+      join: [
+        "🎲 欢迎 {player} 来到牌桌！今天的运势看起来不错...",
+        "💫 {player} 入座，牌局即将开始！",
+        "⚡ 新玩家 {player} 加入，气氛瞬间紧张起来！",
+        "🌟 {player} 落座，今晚的激战正式开始！"
+      ],
+      // 买入
+      buyin: [
+        "💰 {player} 买入 {amount}，看来是要玩大的！",
+        "🎯 {player} 追加 {amount}，场上筹码越来越多...",
+        "🔥 {player} 再加 {amount}，这是要all in的节奏吗？",
+        "💎 {player} 买入 {amount}，牌桌瞬间高大上起来！"
+      ],
+      // 赢
+      win: [
+        "🎉 {player} 赢得 {amount}！运气来了挡都挡不住！",
+        "🏆 {player} 成功收下 {amount}，恭喜恭喜！",
+        "✨ {player} 这把牌真漂亮，一把赢得 {amount}！",
+        "🌈 {player} 运气爆棚，赢得 {amount}！"
+      ],
+      // 输
+      loss: [
+        "😢 {player} 惜败，输掉 {amount}...",
+        "💔 {player} 这把运气不佳，损失 {amount}...",
+        "🌧️ {player} 痛失 {amount}，稳住，我们能赢回来！",
+        "🍀 {player} 运气用完了，输掉 {amount}..."
+      ],
+      // 结束
+      summary: [
+        "📊 本晚共 {count} 位玩家参与，进行 {rounds} 局。",
+        "🎰 最终结算：{winners} 成为今晚大赢家！",
+        "💪 {losers} 是今晚的悲情英雄，继续加油！"
+      ]
+    };
+
+    // 获取随机解说
+    function getCommentary(type, data) {
+      const templates = dealerCommentary[type] || [];
+      const template = templates[Math.floor(Math.random() * templates.length)];
+      
+      return template
+        .replace('{player}', data.player || '玩家')
+        .replace('{amount}', data.amount || 0)
+        .replace('{count}', data.count || 0)
+        .replace('{rounds}', data.rounds || 0)
+        .replace('{winners}', data.winners || '暂无')
+        .replace('{losers}', data.losers || '暂无');
+    }
+
+    // 更新 AI 解说（增强版）
+    function updateAICommentary(type, data) {
       const el = document.getElementById('aiCommentary');
       el.style.display = 'block';
-      document.getElementById('commentaryText').textContent = text;
+      
+      // 显示打字机效果
+      const textEl = document.getElementById('commentaryText');
+      const text = getCommentary(type, data);
+      
+      textEl.innerHTML = '<span class="ai-typing">' + text + '</span>';
+      
+      // 添加音效提示（可选）
+      playSound('commentary');
+    }
+    
+    // 简单的提示音
+    function playSound(type) {
+      // 可以添加音效，这里暂时为空
     }
 
     // 页面切换
@@ -978,7 +1063,7 @@
       toast.className = `toast ${type}`;
       toast.textContent = message;
       document.body.appendChild(toast);
-      
+
       setTimeout(() => toast.remove(), 3000);
     }
 
